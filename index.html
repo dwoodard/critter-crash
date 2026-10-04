@@ -22,7 +22,7 @@ function circle(px,py,r,color){x.fillStyle=color;x.beginPath();x.arc(px,py,r,0,M
 function critter(){circle(ball.x,ball.y,ball.r,'#ef5b45');circle(ball.x-7,ball.y-6,5,'white');circle(ball.x+7,ball.y-6,5,'white');circle(ball.x-6,ball.y-5,2,'#17202b');circle(ball.x+8,ball.y-5,2,'#17202b')}
 function draw(){
  x.clearRect(0,0,w,h);const sky=x.createLinearGradient(0,0,0,h);sky.addColorStop(0,'#73caff');sky.addColorStop(1,'#daf3ff');x.fillStyle=sky;x.fillRect(0,0,w,h);x.fillStyle='#69ad4c';x.fillRect(0,h*.82,w,h*.18);
- x.fillStyle='#101827dd';x.fillRect(0,0,w,54);x.fillStyle='white';x.font='900 18px system-ui';x.textBaseline='middle';x.fillText('CRITTER CRASH — CONTROL TEST',16,27);
+ x.fillStyle='#101827dd';x.fillRect(0,0,w,54);x.fillStyle='white';x.font='900 18px system-ui';x.textBaseline='middle';x.fillText('CRITTER CRASH — CONTROL TEST',16,27);x.textAlign='right';x.font='700 11px ui-monospace,monospace';x.fillStyle='#9fb0c6';x.fillText('BUILD 10',w-14,27);x.textAlign='left';
  x.strokeStyle='#75451f';x.lineWidth=12;x.lineCap='round';x.beginPath();x.moveTo(anchor.x-16,h*.82);x.lineTo(anchor.x-8,anchor.y-10);x.moveTo(anchor.x+16,h*.82);x.lineTo(anchor.x+8,anchor.y-10);x.stroke();
  if(drag){x.strokeStyle='#392317';x.lineWidth=5;x.beginPath();x.moveTo(anchor.x-8,anchor.y-10);x.lineTo(ball.x,ball.y);x.lineTo(anchor.x+8,anchor.y-10);x.stroke();
   const vx=(anchor.x-ball.x)*launchScale,vy=(anchor.y-ball.y)*launchScale;for(let i=1;i<=8;i++){const t=i*.12,px=ball.x+vx*t,py=ball.y+vy*t+.5*gravity*t*t;circle(px,py,3,'#ffffffbb')}}
@@ -31,6 +31,6 @@ function draw(){
  x.fillStyle='#101827';x.textAlign='center';x.font='700 14px system-ui';const text=hit?'GOOD — TAP THE SCREEN TO RESET':flying?'WATCH THE SHOT':'TOUCH THE RED CRITTER • PULL BACK • RELEASE';x.fillText(text,w/2,h-22);x.textAlign='left'
 }
 function loop(now){update(now);draw();requestAnimationFrame(loop)}resize();reset();requestAnimationFrame(loop);
-if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));
+if('serviceWorker'in navigator)addEventListener('load',async()=>{try{const r=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});await r.update()}catch(_){}});
 })();
 </script></body></html>
