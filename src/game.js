@@ -1,4 +1,4 @@
-const BUILD='15'
+const BUILD='16'
 const W={w:900,h:560,ground:500},DT=1/120,G=900,MAX=120,SCALE=6.25
 const c=document.getElementById('game'),x=c.getContext('2d')
 let dpr=1,v={s:1,ox:0,oy:0,cw:0,ch:0},acc=0,last=performance.now(),drag=false,pid=null,updating=false,audio=null
@@ -14,11 +14,12 @@ c.addEventListener('pointerdown',e=>{const p=pos(e);if(inside(p,updateBtn)){forc
 c.addEventListener('pointermove',e=>{if(!drag||e.pointerId!==pid)return;const p=pos(e),dx=p.x-anchor.x,dy=p.y-anchor.y,d=Math.hypot(dx,dy)||1,q=Math.min(MAX,d);ball.x=anchor.x+dx/d*q;ball.y=anchor.y+dy/d*q;e.preventDefault()},{passive:false})
 function release(e){if(!drag||e.pointerId!==pid)return;drag=false;pid=null;const dx=anchor.x-ball.x,dy=anchor.y-ball.y;if(Math.hypot(dx,dy)<8){ball.x=anchor.x;ball.y=anchor.y;return}ball.vx=dx*SCALE;ball.vy=dy*SCALE;ball.flying=true;tone(180,.045);e.preventDefault()}
 c.addEventListener('pointerup',release,{passive:false});c.addEventListener('pointercancel',release,{passive:false});addEventListener('resize',resize)
-function trajectory(){const dx=anchor.x-ball.x,dy=anchor.y-ball.y,vx=dx*SCALE,vy=dy*SCALE,a=[];for(let i=1;i<=14;i++){const t=i*.095;a.push({x:ball.x+vx*t,y:ball.y+vy*t+.5*G*t*t})}return a}
+function flightStep(s,dt=DT){s.vy+=G*dt;s.x+=s.vx*dt;s.y+=s.vy*dt;return s}
+function trajectory(){const s={x:ball.x,y:ball.y,vx:(anchor.x-ball.x)*SCALE,vy:(anchor.y-ball.y)*SCALE},a=[];for(let i=1;i<=160;i++){flightStep(s);if(i%10===0)a.push({x:s.x,y:s.y});if(a.length>=14||s.y>=W.ground)break}return a}
 function tone(f,d){try{audio??=new(window.AudioContext||window.webkitAudioContext)();const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=f;g.gain.setValueAtTime(.05,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+d);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+d)}catch(_){}}
 function hitWeak(){phase='CRACK';phaseTime=0;monster.state='ALARMED';ball.flying=false;shake=7;flash=.5;tone(110,.08);try{navigator.vibrate?.(25)}catch(_){};for(let i=0;i<14;i++)dust.push({x:weak.x,y:weak.y-20,vx:(Math.random()-.5)*90,vy:-Math.random()*90,a:1})}
 function step(){shake=Math.max(0,shake-DT*25);flash=Math.max(0,flash-DT*3);for(const d of dust){d.x+=d.vx*DT;d.y+=d.vy*DT;d.vy+=250*DT;d.a-=DT*1.5}dust=dust.filter(d=>d.a>0)
- if(ball.flying){trail.push({x:ball.x,y:ball.y,a:1});if(trail.length>18)trail.shift();for(const t of trail)t.a*=.93;ball.vy+=G*DT;ball.x+=ball.vx*DT;ball.y+=ball.vy*DT
+ if(ball.flying){trail.push({x:ball.x,y:ball.y,a:1});if(trail.length>18)trail.shift();for(const t of trail)t.a*=.93;flightStep(ball)
  const hx=Math.max(weak.x-weak.w/2,Math.min(ball.x,weak.x+weak.w/2)),hy=Math.max(weak.y-weak.h/2,Math.min(ball.y,weak.y+weak.h/2));if((ball.x-hx)**2+(ball.y-hy)**2<=ball.r**2){hitWeak();return}
  if(ball.y+ball.r>=W.ground){ball.y=W.ground-ball.r;ball.flying=false;phase='MISS';phaseTime=0}if(ball.x>W.w+60){ball.flying=false;phase='MISS';phaseTime=0}}
  if(phase==='CRACK'||phase==='COLLAPSE'||phase==='MISS'){phaseTime+=DT}
@@ -35,7 +36,7 @@ function world(){const g=x.createLinearGradient(0,0,0,W.h);g.addColorStop(0,'#72
  x.strokeStyle='#75451f';x.lineWidth=16;x.lineCap='round';x.beginPath();x.moveTo(anchor.x-25,W.ground);x.lineTo(anchor.x-10,anchor.y-8);x.moveTo(anchor.x+25,W.ground);x.lineTo(anchor.x+10,anchor.y-8);x.stroke()
  if(drag){x.strokeStyle='#3a2518';x.lineWidth=7;x.beginPath();x.moveTo(anchor.x-10,anchor.y-8);x.lineTo(ball.x,ball.y);x.lineTo(anchor.x+10,anchor.y-8);x.stroke();for(const p of trajectory()){x.fillStyle='#ffffffd5';x.beginPath();x.arc(p.x,p.y,4,0,Math.PI*2);x.fill()}}
  for(const t of trail){x.globalAlpha=t.a*.3;x.fillStyle='#fff';x.beginPath();x.arc(t.x,t.y,7,0,Math.PI*2);x.fill()}x.globalAlpha=1
- if(phase==='READY'||phase==='MISS')block(weak,true);block(support);x.save();x.translate(beam.x,beam.y);x.rotate(beam.angle);block({x:0,y:0,w:beam.w,h:beam.h});x.restore();monsterDraw();critter()
+ if(phase==='READY'||phase==='MISS')block(weak,true);else{x.save();x.translate(weak.x-8,W.ground-7);x.rotate(-1.05);block({x:0,y:0,w:18,h:64},true);x.restore();x.save();x.translate(weak.x+12,W.ground-5);x.rotate(.72);block({x:0,y:0,w:17,h:48},true);x.restore()}block(support);x.save();x.translate(beam.x,beam.y);x.rotate(beam.angle);block({x:0,y:0,w:beam.w,h:beam.h});x.restore();monsterDraw();critter()
  for(const d of dust){x.globalAlpha=d.a;x.fillStyle='#b78455';x.fillRect(d.x-3,d.y-3,6,6)}x.globalAlpha=1
  rr(14,512,872,38,12,'#101827dd');x.fillStyle='#dbe7f5';x.font='700 13px system-ui';x.textAlign='left';x.fillText(phase==='READY'?'Find the weak point • Pull • Aim • Crash':phase==='CRACK'?'CRACK!':phase==='COLLAPSE'?'WATCH IT FALL…':phase==='DONE'?'FIRST CRASH! +1000':'Try another angle',28,531);x.textAlign='right';x.fillStyle='#f6b73c';x.fillText('RESTART',870,531);x.fillStyle='#10182788';x.font='700 10px ui-monospace';x.textAlign='center';x.fillText('BUILD '+BUILD,450,493)
  if(phase==='DONE'){rr(330,90,240,48,18,'#101827dd');x.fillStyle='#fff';x.font='900 18px system-ui';x.fillText('CRASH! +1000',450,114)}
