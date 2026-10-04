@@ -35,16 +35,16 @@ function vibrate(ms){try{navigator.vibrate&&navigator.vibrate(ms)}catch(_){}}
 function worldPoint(e){const r=c.getBoundingClientRect(),s=Math.min(r.width/W,r.height/H),dw=W*s,dh=H*s,ox=(r.width-dw)/2,oy=(r.height-dh)/2;return{x:(e.clientX-r.left-ox)/s,y:(e.clientY-r.top-oy)/s}}
 
 function makeBlock(x,y,w,h,material="wood"){
- const props=material==="glass"?{density:.0009,friction:.45,restitution:.08}:{density:.0022,friction:.75,restitution:.03};
+ const props=material==="glass"?{density:.0009,friction:.45,restitution:.08}:{density:.0017,friction:.62,restitution:.08};
  const b=Bodies.rectangle(x,y,w,h,{...props,chamfer:{radius:2},label:"block"});
  b.game={w,h,material,hp:material==="glass"?1:2,lastHit:0};blocks.push(b);return b
 }
 function makeTarget(x,y){
- const b=Bodies.circle(x,y,19,{density:.0012,friction:.8,restitution:.15,label:"target"});
+ const b=Bodies.circle(x,y,19,{density:.0008,friction:.65,restitution:.22,label:"target"});
  b.game={alive:true,blink:Math.random()*100};targets.push(b);return b
 }
 function makeProjectile(){
- projectile=Bodies.circle(anchor.x,anchor.y,20,{density:.0045,friction:.6,restitution:.25,frictionAir:.004,label:"projectile"});
+ projectile=Bodies.circle(anchor.x,anchor.y,20,{density:.0065,friction:.45,restitution:.32,frictionAir:.0015,label:"projectile"});
  projectile.game={r:20};Composite.add(engine.world,projectile)
 }
 function reset(){
@@ -54,12 +54,12 @@ function reset(){
  const left=Bodies.rectangle(-20,H/2,40,H,{isStatic:true}),right=Bodies.rectangle(W+20,H/2,40,H,{isStatic:true});
  Composite.add(engine.world,[ground,left,right]);
  const pieces=[
-  makeBlock(655,444,22,120),makeBlock(785,444,22,120),makeBlock(720,388,165,20),
-  makeBlock(680,333,20,92),makeBlock(760,333,20,92),makeBlock(720,282,120,18,"glass"),
-  makeBlock(720,242,18,62,"glass"),makeBlock(720,205,105,16,"glass")
+  makeBlock(615,444,22,120),makeBlock(745,444,22,120),makeBlock(680,388,165,20),
+  makeBlock(640,333,20,92),makeBlock(720,333,20,92),makeBlock(680,282,120,18,"glass"),
+  makeBlock(680,242,18,62,"glass"),makeBlock(680,205,105,16,"glass")
  ];
  Composite.add(engine.world,pieces);
- Composite.add(engine.world,[makeTarget(690,360),makeTarget(750,360),makeTarget(720,260)]);
+ Composite.add(engine.world,[makeTarget(650,360),makeTarget(710,360),makeTarget(680,260)]);
  makeProjectile();
  Events.on(engine,"collisionStart",onCollision);
  show("DRAG • AIM • RELEASE",1400)
@@ -76,8 +76,10 @@ function onCollision(ev){
   if((pa||pb)&&speed>4){const hit=pa?b:a;shake=Math.max(shake,Math.min(10,speed*.7));burst(pair.collision.supports[0]?.x||projectile.position.x,pair.collision.supports[0]?.y||projectile.position.y,"#f6b73c",8);if(speed>7)vibrate(12);
     if(hit.label==="block"){score+=Math.round(speed*8);addPop("+"+Math.round(speed*8),hit.position.x,hit.position.y-20,"#fff")}
   }
-  if(a.label==="target"&&a.game.alive&&speed>2.4)killTarget(a,speed);
-  if(b.label==="target"&&b.game.alive&&speed>2.4)killTarget(b,speed);
+  const targetA=a.label==="target"&&a.game.alive,targetB=b.label==="target"&&b.game.alive;
+  const crushing=(a.label==="block"||b.label==="block")&&speed>.75;
+  if(targetA&&(speed>1.35||crushing))killTarget(a,speed);
+  if(targetB&&(speed>1.35||crushing))killTarget(b,speed);
  }
 }
 function nextShot(){
@@ -90,7 +92,7 @@ function launch(){
  if(!drag||state!=="playing")return;drag=false;
  const dx=anchor.x-projectile.position.x,dy=anchor.y-projectile.position.y,d=Math.hypot(dx,dy);
  if(d<10){Body.setPosition(projectile,anchor);return}
- shots--;launched=true;shotStart=performance.now();Body.setStatic(projectile,false);Body.setVelocity(projectile,{x:dx*.115,y:dy*.115});show("CRASH 'EM!",700)
+ shots--;launched=true;shotStart=performance.now();Body.setStatic(projectile,false);Body.setVelocity(projectile,{x:dx*.15,y:dy*.15});show("CRASH 'EM!",700)
 }
 c.addEventListener("pointerdown",e=>{
  const p=worldPoint(e);
@@ -113,9 +115,9 @@ function update(dt){
  if(launched&&state==="playing"){
   const active=[projectile,...blocks,...targets.filter(t=>t.game.alive)].filter(b=>!b.isStatic);
   const moving=active.some(b=>b.speed>.28||b.angularSpeed>.025);
-  if(!moving&&performance.now()-shotStart>900)settleFrames++;else settleFrames=0;
+  if(!moving&&performance.now()-shotStart>1300)settleFrames++;else settleFrames=0;
   if(projectile.position.x>W+80||projectile.position.y>H+100)settleFrames+=3;
-  if(settleFrames>55)nextShot()
+  if(settleFrames>85)nextShot()
  }
 }
 function cloud(x,y,s){ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(x,y,22*s,0,7);ctx.arc(x+24*s,y-8*s,29*s,0,7);ctx.arc(x+53*s,y,21*s,0,7);ctx.fill()}
@@ -146,7 +148,7 @@ function draw(){
  // sling
  ctx.strokeStyle="#75451f";ctx.lineWidth=16;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(126,GROUND);ctx.lineTo(143,370);ctx.moveTo(178,GROUND);ctx.lineTo(162,370);ctx.stroke();
  if(drag){ctx.strokeStyle="#3a2518";ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(143,370);ctx.lineTo(projectile.position.x,projectile.position.y);ctx.lineTo(162,370);ctx.stroke();
-  const dx=anchor.x-projectile.position.x,dy=anchor.y-projectile.position.y;for(let i=1;i<10;i++){const t=i*.13,px=anchor.x+dx*.115*t*42,py=anchor.y+dy*.115*t*42+.18*(t*42)*(t*42);ctx.fillStyle="#ffffffbb";ctx.beginPath();ctx.arc(px,py,4,0,7);ctx.fill()}}
+  const dx=anchor.x-projectile.position.x,dy=anchor.y-projectile.position.y;for(let i=1;i<10;i++){const t=i*.13,px=anchor.x+dx*.15*t*42,py=anchor.y+dy*.15*t*42+.18*(t*42)*(t*42);ctx.fillStyle="#ffffffbb";ctx.beginPath();ctx.arc(px,py,4,0,7);ctx.fill()}}
  blocks.forEach(drawBody);targets.forEach(drawBody);drawProjectile();
  particles.forEach(p=>{ctx.globalAlpha=Math.min(1,p.life/20);ctx.fillStyle=p.color;ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size)});ctx.globalAlpha=1;
  pops.forEach(p=>{ctx.globalAlpha=Math.min(1,p.life/20);ctx.textAlign="center";ctx.font="900 17px system-ui,-apple-system,sans-serif";ctx.fillStyle=p.color;ctx.fillText(p.text,p.x,p.y)});ctx.globalAlpha=1;
