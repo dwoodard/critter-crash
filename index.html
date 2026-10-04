@@ -23,7 +23,7 @@ body{position:fixed;inset:0;padding:env(safe-area-inset-top) env(safe-area-inset
 (()=>{
 "use strict";
 const c=document.getElementById("game"),ctx=c.getContext("2d");
-const {Engine,Bodies,Body,Composite,Events}=Matter;
+const {Engine,Bodies,Body,Composite,Events,Sleeping}=Matter;
 const W=900,H=560,GROUND=505,anchor={x:150,y:380};
 let engine,ground,projectile,blocks=[],targets=[],shots=3,score=0,drag=false,launched=false,shotStart=0,settleFrames=0,state="playing",message="",messageUntil=0,shake=0,particles=[],pops=[],last=performance.now();
 
@@ -98,7 +98,7 @@ function launch(){
  Body.setPosition(projectile,releasePos);
  Body.setVelocity(projectile,{x:dx*.15,y:dy*.15});
  Body.setAngularVelocity(projectile,dx*.0008);
- Body.setAwake(projectile,true);
+ Sleeping.set(projectile,false);
  show("CRASH 'EM!",700)
 }
 c.addEventListener("pointerdown",e=>{
