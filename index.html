@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#78c7ff">
+<meta name="theme-color" content="#101827">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Critter Crash">
@@ -11,75 +11,154 @@
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
 <title>Critter Crash</title>
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101827;overscroll-behavior:none}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101827;overscroll-behavior:none}
 body{position:fixed;inset:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);touch-action:none}
-#game{display:block;width:100%;height:100%;touch-action:none;background:#101827;object-fit:contain}
+#game{display:block;width:100%;height:100%;object-fit:contain;touch-action:none;background:#101827}
 </style>
 </head>
 <body>
 <canvas id="game" width="900" height="560" aria-label="Critter Crash game"></canvas>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"></script>
 <script>
-(()=>{"use strict";
-const c=document.getElementById("game"),x=c.getContext("2d");
-const W=c.width,H=c.height,G=.34,ground=505,anchor={x:155,y:375};
-let score=0,shots=3,drag=false,won=false,ball,targets,blocks,particles=[],settle=0,message="",messageUntil=0;
-const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-function resetBall(){ball={x:anchor.x,y:anchor.y,vx:0,vy:0,r:19,flying:false,used:false};settle=0}
-function reset(){score=0;shots=3;won=false;particles=[];targets=[{x:690,y:463,r:18,alive:true},{x:748,y:463,r:18,alive:true},{x:720,y:367,r:18,alive:true}];blocks=[{x:650,y:405,w:18,h:100,vx:0,vy:0,a:0},{x:772,y:405,w:18,h:100,vx:0,vy:0,a:0},{x:711,y:390,w:145,h:18,vx:0,vy:0,a:0},{x:680,y:315,w:18,h:75,vx:0,vy:0,a:0},{x:750,y:315,w:18,h:75,vx:0,vy:0,a:0},{x:715,y:300,w:100,h:16,vx:0,vy:0,a:0}];resetBall();sync();show("Drag, aim, release!",1200)}
-function sync(){}
-function show(t,ms=1000){message=t;messageUntil=performance.now()+ms}
-function view(){const r=c.getBoundingClientRect(),scale=Math.min(r.width/W,r.height/H),dw=W*scale,dh=H*scale;return{r,scale,ox:(r.width-dw)/2,oy:(r.height-dh)/2}}
-function pos(e){const v=view();return{x:(e.clientX-v.r.left-v.ox)/v.scale,y:(e.clientY-v.r.top-v.oy)/v.scale}}
-c.addEventListener("pointerdown",e=>{const p=pos(e);if(p.x>780&&p.y>505&&p.y<560){reset();return}if(won||ball.flying||shots<=0)return;if(Math.hypot(p.x-ball.x,p.y-ball.y)<45){drag=true;c.setPointerCapture(e.pointerId)}});
-c.addEventListener("pointermove",e=>{if(!drag)return;const p=pos(e),dx=p.x-anchor.x,dy=p.y-anchor.y,d=Math.hypot(dx,dy)||1,m=Math.min(115,d);ball.x=anchor.x+dx/d*m;ball.y=anchor.y+dy/d*m});
-function launch(e){if(!drag)return;drag=false;const dx=anchor.x-ball.x,dy=anchor.y-ball.y;if(Math.hypot(dx,dy)<10){resetBall();return}ball.vx=dx*.135;ball.vy=dy*.135;ball.flying=true;ball.used=true;shots--;sync()}
+(()=>{
+"use strict";
+const c=document.getElementById("game"),ctx=c.getContext("2d");
+const {Engine,Bodies,Body,Composite,Events}=Matter;
+const W=900,H=560,GROUND=505,anchor={x:150,y:380};
+let engine,ground,projectile,blocks=[],targets=[],shots=3,score=0,drag=false,launched=false,shotStart=0,settleFrames=0,state="playing",message="",messageUntil=0,shake=0,particles=[],pops=[],last=performance.now();
+
+function rr(x,y,w,h,r,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=2;ctx.stroke()}}
+function show(t,ms=1200){message=t;messageUntil=performance.now()+ms}
+function addPop(text,x,y,color="#fff"){pops.push({text,x,y,life:70,color})}
+function burst(x,y,color,n=14){for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=2+Math.random()*7;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-2,life:35+Math.random()*25,color,size:3+Math.random()*5})}}
+function vibrate(ms){try{navigator.vibrate&&navigator.vibrate(ms)}catch(_){}}
+function worldPoint(e){const r=c.getBoundingClientRect(),s=Math.min(r.width/W,r.height/H),dw=W*s,dh=H*s,ox=(r.width-dw)/2,oy=(r.height-dh)/2;return{x:(e.clientX-r.left-ox)/s,y:(e.clientY-r.top-oy)/s}}
+
+function makeBlock(x,y,w,h,material="wood"){
+ const props=material==="glass"?{density:.0009,friction:.45,restitution:.08}:{density:.0022,friction:.75,restitution:.03};
+ const b=Bodies.rectangle(x,y,w,h,{...props,chamfer:{radius:2},label:"block"});
+ b.game={w,h,material,hp:material==="glass"?1:2,lastHit:0};blocks.push(b);return b
+}
+function makeTarget(x,y){
+ const b=Bodies.circle(x,y,19,{density:.0012,friction:.8,restitution:.15,label:"target"});
+ b.game={alive:true,blink:Math.random()*100};targets.push(b);return b
+}
+function makeProjectile(){
+ projectile=Bodies.circle(anchor.x,anchor.y,20,{density:.0045,friction:.6,restitution:.25,frictionAir:.004,label:"projectile"});
+ projectile.game={r:20};Composite.add(engine.world,projectile)
+}
+function reset(){
+ engine=Engine.create({enableSleeping:true});engine.gravity.y=1.05;
+ blocks=[];targets=[];particles=[];pops=[];shots=3;score=0;drag=false;launched=false;settleFrames=0;state="playing";shake=0;
+ ground=Bodies.rectangle(W/2,GROUND+30,W+100,60,{isStatic:true,friction:1,label:"ground"});
+ const left=Bodies.rectangle(-20,H/2,40,H,{isStatic:true}),right=Bodies.rectangle(W+20,H/2,40,H,{isStatic:true});
+ Composite.add(engine.world,[ground,left,right]);
+ const pieces=[
+  makeBlock(655,444,22,120),makeBlock(785,444,22,120),makeBlock(720,388,165,20),
+  makeBlock(680,333,20,92),makeBlock(760,333,20,92),makeBlock(720,282,120,18,"glass"),
+  makeBlock(720,242,18,62,"glass"),makeBlock(720,205,105,16,"glass")
+ ];
+ Composite.add(engine.world,pieces);
+ Composite.add(engine.world,[makeTarget(690,360),makeTarget(750,360),makeTarget(720,260)]);
+ makeProjectile();
+ Events.on(engine,"collisionStart",onCollision);
+ show("DRAG • AIM • RELEASE",1400)
+}
+function killTarget(t,impact){
+ if(!t.game.alive)return;t.game.alive=false;score+=1000;addPop("+1000",t.position.x,t.position.y-25,"#ffe36e");burst(t.position.x,t.position.y,"#8b5cf6",22);shake=Math.max(shake,8);vibrate(25);
+ setTimeout(()=>{try{Composite.remove(engine.world,t)}catch(_){}},0);
+ if(targets.every(q=>!q.game.alive)){state="won";const bonus=shots*500;score+=bonus;show("LEVEL CLEARED!",5000);if(bonus)addPop("+"+bonus+" critter bonus",W/2,145,"#ffe36e")}
+}
+function onCollision(ev){
+ for(const pair of ev.pairs){
+  const a=pair.bodyA,b=pair.bodyB,pa=a.label==="projectile",pb=b.label==="projectile";
+  const speed=Math.max(a.speed,b.speed);
+  if((pa||pb)&&speed>4){const hit=pa?b:a;shake=Math.max(shake,Math.min(10,speed*.7));burst(pair.collision.supports[0]?.x||projectile.position.x,pair.collision.supports[0]?.y||projectile.position.y,"#f6b73c",8);if(speed>7)vibrate(12);
+    if(hit.label==="block"){score+=Math.round(speed*8);addPop("+"+Math.round(speed*8),hit.position.x,hit.position.y-20,"#fff")}
+  }
+  if(a.label==="target"&&a.game.alive&&speed>2.4)killTarget(a,speed);
+  if(b.label==="target"&&b.game.alive&&speed>2.4)killTarget(b,speed);
+ }
+}
+function nextShot(){
+ if(state!=="playing")return;
+ if(shots<=0){state="lost";show("OUT OF CRITTERS",5000);return}
+ try{Composite.remove(engine.world,projectile)}catch(_){}
+ makeProjectile();launched=false;settleFrames=0;show("NEXT CRITTER!",800)
+}
+function launch(){
+ if(!drag||state!=="playing")return;drag=false;
+ const dx=anchor.x-projectile.position.x,dy=anchor.y-projectile.position.y,d=Math.hypot(dx,dy);
+ if(d<10){Body.setPosition(projectile,anchor);return}
+ shots--;launched=true;shotStart=performance.now();Body.setStatic(projectile,false);Body.setVelocity(projectile,{x:dx*.115,y:dy*.115});show("CRASH 'EM!",700)
+}
+c.addEventListener("pointerdown",e=>{
+ const p=worldPoint(e);
+ if(p.x>775&&p.y<70){reset();return}
+ if((state==="won"||state==="lost")&&p.y>430){reset();return}
+ if(state!=="playing"||launched)return;
+ if(Math.hypot(p.x-projectile.position.x,p.y-projectile.position.y)<55){drag=true;Body.setStatic(projectile,true);c.setPointerCapture(e.pointerId)}
+});
+c.addEventListener("pointermove",e=>{
+ if(!drag)return;const p=worldPoint(e),dx=p.x-anchor.x,dy=p.y-anchor.y,d=Math.hypot(dx,dy)||1,m=Math.min(115,d);
+ Body.setPosition(projectile,{x:anchor.x+dx/d*m,y:anchor.y+dy/d*m})
+});
 c.addEventListener("pointerup",launch);c.addEventListener("pointercancel",launch);
 
-function hitTarget(t){if(!t.alive)return;const d=Math.hypot(ball.x-t.x,ball.y-t.y);if(d<ball.r+t.r&&Math.hypot(ball.vx,ball.vy)>2.4){t.alive=false;score+=1000;sync();burst(t.x,t.y);show("+1000");if(targets.every(q=>!q.alive)){won=true;score+=shots*500;sync();show("LEVEL CLEARED!",3000)}}}
-function burst(px,py){for(let i=0;i<12;i++)particles.push({x:px,y:py,vx:(Math.random()-.5)*6,vy:(Math.random()-.7)*6,l:30})}
-function update(){
- if(ball.flying){ball.vy+=G;ball.x+=ball.vx;ball.y+=ball.vy;ball.vx*=.997;ball.vy*=.997;
-  if(ball.y+ball.r>ground){ball.y=ground-ball.r;ball.vy*=-.43;ball.vx*=.76;if(Math.abs(ball.vy)<.7)ball.vy=0}
-  blocks.forEach(b=>{const l=b.x-b.w/2,r=b.x+b.w/2,t=b.y-b.h/2,bt=b.y+b.h/2;if(ball.x+ball.r>l&&ball.x-ball.r<r&&ball.y+ball.r>t&&ball.y-ball.r<bt){const speed=Math.hypot(ball.vx,ball.vy);b.vx+=ball.vx*.08;b.vy+=ball.vy*.03;ball.vx*=-.42;ball.vy*=-.35;if(speed>3){score+=50;sync()}}});
-  targets.forEach(hitTarget);
-  if(ball.x>W+80||ball.x<-80||ball.y>H+80||(ball.vx===0&&ball.vy===0)){settle++}else if(Math.hypot(ball.vx,ball.vy)<.55&&ball.y>450)settle++;else settle=0;
-  if(settle>45&&!won){if(shots>0){resetBall();show("Next critter!")}else show("Out of critters — restart!",2500)}
+function update(dt){
+ Engine.update(engine,Math.min(33,dt));
+ particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.2;p.vx*=.98;p.life--});particles=particles.filter(p=>p.life>0);
+ pops.forEach(p=>{p.y-=.45;p.life--});pops=pops.filter(p=>p.life>0);
+ if(shake>0)shake*=.84;
+ if(launched&&state==="playing"){
+  const active=[projectile,...blocks,...targets.filter(t=>t.game.alive)].filter(b=>!b.isStatic);
+  const moving=active.some(b=>b.speed>.28||b.angularSpeed>.025);
+  if(!moving&&performance.now()-shotStart>900)settleFrames++;else settleFrames=0;
+  if(projectile.position.x>W+80||projectile.position.y>H+100)settleFrames+=3;
+  if(settleFrames>55)nextShot()
  }
- blocks.forEach(b=>{if(Math.abs(b.vx)>.02||Math.abs(b.vy)>.02){b.vy+=G*.35;b.x+=b.vx;b.y+=b.vy;b.vx*=.94;b.vy*=.94;if(b.y+b.h/2>ground){b.y=ground-b.h/2;b.vy*=-.15;b.vx*=.8}targets.forEach(t=>{if(t.alive&&Math.abs(t.x-b.x)<b.w/2+t.r&&Math.abs(t.y-b.y)<b.h/2+t.r&&Math.hypot(b.vx,b.vy)>1.5){t.alive=false;score+=1000;sync();burst(t.x,t.y);if(targets.every(q=>!q.alive)){won=true;show("LEVEL CLEARED!",3000)}}})}});
- particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.15;p.l--});particles=particles.filter(p=>p.l>0)
 }
-function cloud(cx,cy,s){x.fillStyle="#fff";x.beginPath();x.arc(cx,cy,24*s,0,7);x.arc(cx+25*s,cy-8*s,31*s,0,7);x.arc(cx+55*s,cy,23*s,0,7);x.fill()}
-function roundRect(px,py,w,h,r,fill,stroke){
- x.beginPath();x.roundRect(px,py,w,h,r);if(fill){x.fillStyle=fill;x.fill()}if(stroke){x.strokeStyle=stroke;x.lineWidth=2;x.stroke()}
+function cloud(x,y,s){ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(x,y,22*s,0,7);ctx.arc(x+24*s,y-8*s,29*s,0,7);ctx.arc(x+53*s,y,21*s,0,7);ctx.fill()}
+function drawBody(b){
+ if(b.label==="block"){
+  const {w,h,material}=b.game;ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);
+  ctx.fillStyle=material==="glass"?"#b9efff":"#b97836";ctx.fillRect(-w/2,-h/2,w,h);ctx.strokeStyle=material==="glass"?"#65b8d1":"#71421d";ctx.lineWidth=3;ctx.strokeRect(-w/2,-h/2,w,h);
+  if(material==="wood"){ctx.strokeStyle="#d69652";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-w*.3,-h*.35);ctx.lineTo(w*.3,h*.35);ctx.stroke()}ctx.restore()
+ } else if(b.label==="target"&&b.game.alive){
+  const x=b.position.x,y=b.position.y,r=19;ctx.save();ctx.translate(x,y);ctx.rotate(b.angle);ctx.fillStyle="#754bd1";ctx.beginPath();ctx.arc(0,0,r,0,7);ctx.fill();
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(-6,-4,5,0,7);ctx.arc(6,-4,5,0,7);ctx.fill();ctx.fillStyle="#222";ctx.beginPath();ctx.arc(-5,-3,2,0,7);ctx.arc(7,-3,2,0,7);ctx.fill();
+  ctx.strokeStyle="#321a72";ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,6,7,.2,Math.PI-.2);ctx.stroke();ctx.restore()
+ }
+}
+function drawProjectile(){
+ const p=projectile.position;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(projectile.angle);ctx.fillStyle="#f15b45";ctx.beginPath();ctx.arc(0,0,20,0,7);ctx.fill();
+ ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(-6,-5,5,0,7);ctx.arc(6,-5,5,0,7);ctx.fill();ctx.fillStyle="#222";ctx.beginPath();ctx.arc(-5,-4,2,0,7);ctx.arc(7,-4,2,0,7);ctx.fill();
+ ctx.fillStyle="#7c2d1d";ctx.beginPath();ctx.moveTo(-7,7);ctx.lineTo(7,7);ctx.lineTo(0,13);ctx.closePath();ctx.fill();ctx.restore()
 }
 function draw(){
- const g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,"#72c9ff");g.addColorStop(1,"#d9f2ff");x.fillStyle=g;x.fillRect(0,0,W,H);
- cloud(100,90,.8);cloud(420,120,.55);cloud(760,70,.7);
- x.fillStyle="#6fb84f";x.fillRect(0,ground,W,H-ground);x.fillStyle="#4b8d37";x.fillRect(0,ground,W,8);
-
- // compact in-canvas HUD
- x.textBaseline="middle";x.fillStyle="#101827dd";roundRect(14,14,872,58,18,"#101827dd");
- x.fillStyle="#fff";x.font="900 25px system-ui,-apple-system,sans-serif";x.textAlign="left";x.fillText("CRITTER CRASH",32,43);
- x.font="700 18px system-ui,-apple-system,sans-serif";x.textAlign="right";x.fillText("Score "+score+"   •   Critters "+shots,868,43);
-
- // slingshot
- x.strokeStyle="#75451f";x.lineWidth=16;x.lineCap="round";x.beginPath();x.moveTo(130,ground);x.lineTo(145,370);x.moveTo(180,ground);x.lineTo(165,370);x.stroke();
- if(drag){x.strokeStyle="#3a2518";x.lineWidth=7;x.beginPath();x.moveTo(145,370);x.lineTo(ball.x,ball.y);x.lineTo(165,370);x.stroke();
-  const dx=anchor.x-ball.x,dy=anchor.y-ball.y;for(let i=1;i<9;i++){const tt=i*.12,px=anchor.x+dx*.135*tt*38,py=anchor.y+dy*.135*tt*38+.5*G*(tt*38)*(tt*38);x.fillStyle="#ffffffaa";x.beginPath();x.arc(px,py,4,0,7);x.fill()}}
- blocks.forEach(b=>{x.save();x.translate(b.x,b.y);x.rotate(b.a);x.fillStyle="#b97836";x.fillRect(-b.w/2,-b.h/2,b.w,b.h);x.strokeStyle="#77471f";x.lineWidth=3;x.strokeRect(-b.w/2,-b.h/2,b.w,b.h);x.restore()});
- targets.forEach(t=>{if(!t.alive)return;x.fillStyle="#754bd1";x.beginPath();x.arc(t.x,t.y,t.r,0,7);x.fill();x.fillStyle="#fff";x.beginPath();x.arc(t.x-6,t.y-4,5,0,7);x.arc(t.x+6,t.y-4,5,0,7);x.fill();x.fillStyle="#222";x.beginPath();x.arc(t.x-5,t.y-3,2,0,7);x.arc(t.x+7,t.y-3,2,0,7);x.fill()});
- x.fillStyle="#f15b45";x.beginPath();x.arc(ball.x,ball.y,ball.r,0,7);x.fill();x.fillStyle="#fff";x.beginPath();x.arc(ball.x-6,ball.y-5,5,0,7);x.arc(ball.x+6,ball.y-5,5,0,7);x.fill();x.fillStyle="#222";x.beginPath();x.arc(ball.x-5,ball.y-4,2,0,7);x.arc(ball.x+7,ball.y-4,2,0,7);x.fill();
- particles.forEach(p=>{x.globalAlpha=p.l/30;x.fillStyle="#8b5cf6";x.fillRect(p.x,p.y,6,6);x.globalAlpha=1});
-
- // in-canvas instruction/restart strip
- roundRect(14,516,872,34,12,"#101827cc");
- x.font="600 14px system-ui,-apple-system,sans-serif";x.textAlign="left";x.fillStyle="#dbe7f5";x.fillText("Drag critter • Aim • Release",28,533);
- x.textAlign="right";x.fillStyle="#f6b73c";x.font="800 14px system-ui,-apple-system,sans-serif";x.fillText("RESTART",870,533);
-
- if(message&&performance.now()<messageUntil){x.font="800 18px system-ui,-apple-system,sans-serif";x.textAlign="center";const mw=Math.max(180,x.measureText(message).width+34);roundRect((W-mw)/2,84,mw,38,19,"#101827e8","#ffffff44");x.fillStyle="#fff";x.fillText(message,W/2,103)}
+ ctx.clearRect(0,0,W,H);ctx.save();if(shake>.2)ctx.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);
+ const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#72c9ff");g.addColorStop(1,"#d9f2ff");ctx.fillStyle=g;ctx.fillRect(-15,-15,W+30,H+30);
+ cloud(95,115,.7);cloud(420,135,.5);cloud(790,105,.65);
+ ctx.fillStyle="#6fb84f";ctx.fillRect(0,GROUND,W,H-GROUND);ctx.fillStyle="#4b8d37";ctx.fillRect(0,GROUND,W,8);
+ // HUD entirely inside world
+ rr(14,14,872,58,18,"#101827df");ctx.textBaseline="middle";ctx.fillStyle="#fff";ctx.textAlign="left";ctx.font="900 25px system-ui,-apple-system,sans-serif";ctx.fillText("CRITTER CRASH",30,43);
+ ctx.textAlign="right";ctx.font="700 18px system-ui,-apple-system,sans-serif";ctx.fillText("Score "+score+"   •   Critters "+shots,755,43);rr(780,25,90,36,18,"#f6b73c");ctx.fillStyle="#251600";ctx.font="900 13px system-ui,-apple-system,sans-serif";ctx.fillText("RESTART",855,43);
+ // sling
+ ctx.strokeStyle="#75451f";ctx.lineWidth=16;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(126,GROUND);ctx.lineTo(143,370);ctx.moveTo(178,GROUND);ctx.lineTo(162,370);ctx.stroke();
+ if(drag){ctx.strokeStyle="#3a2518";ctx.lineWidth=7;ctx.beginPath();ctx.moveTo(143,370);ctx.lineTo(projectile.position.x,projectile.position.y);ctx.lineTo(162,370);ctx.stroke();
+  const dx=anchor.x-projectile.position.x,dy=anchor.y-projectile.position.y;for(let i=1;i<10;i++){const t=i*.13,px=anchor.x+dx*.115*t*42,py=anchor.y+dy*.115*t*42+.18*(t*42)*(t*42);ctx.fillStyle="#ffffffbb";ctx.beginPath();ctx.arc(px,py,4,0,7);ctx.fill()}}
+ blocks.forEach(drawBody);targets.forEach(drawBody);drawProjectile();
+ particles.forEach(p=>{ctx.globalAlpha=Math.min(1,p.life/20);ctx.fillStyle=p.color;ctx.fillRect(p.x-p.size/2,p.y-p.size/2,p.size,p.size)});ctx.globalAlpha=1;
+ pops.forEach(p=>{ctx.globalAlpha=Math.min(1,p.life/20);ctx.textAlign="center";ctx.font="900 17px system-ui,-apple-system,sans-serif";ctx.fillStyle=p.color;ctx.fillText(p.text,p.x,p.y)});ctx.globalAlpha=1;
+ if(message&&performance.now()<messageUntil){ctx.textAlign="center";ctx.font="900 18px system-ui,-apple-system,sans-serif";const mw=Math.max(190,ctx.measureText(message).width+38);rr((W-mw)/2,88,mw,40,20,"#101827e8","#ffffff44");ctx.fillStyle="#fff";ctx.fillText(message,W/2,108)}
+ if(state==="won"||state==="lost"){ctx.fillStyle="#101827bb";ctx.fillRect(0,0,W,H);rr(250,145,400,275,28,"#101827f5","#ffffff33");ctx.textAlign="center";ctx.fillStyle=state==="won"?"#ffe36e":"#fff";ctx.font="900 36px system-ui,-apple-system,sans-serif";ctx.fillText(state==="won"?"LEVEL CLEARED!":"TRY AGAIN",W/2,205);
+  ctx.fillStyle="#fff";ctx.font="800 25px system-ui,-apple-system,sans-serif";ctx.fillText("Score "+score,W/2,260);
+  if(state==="won"){const stars=shots>=2?3:shots>=1?2:1;ctx.font="900 42px system-ui";ctx.fillStyle="#ffe36e";ctx.fillText("★".repeat(stars)+"☆".repeat(3-stars),W/2,315)}
+  rr(330,345,240,52,20,"#f6b73c");ctx.fillStyle="#251600";ctx.font="900 18px system-ui";ctx.fillText("PLAY AGAIN",W/2,371)}
+ ctx.restore()
 }
-function loop(){update();draw();requestAnimationFrame(loop)}reset();loop();
+function loop(now){const dt=now-last;last=now;update(dt);draw();requestAnimationFrame(loop)}
+reset();requestAnimationFrame(loop);
 if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("./sw.js"));
 })();
 </script>
