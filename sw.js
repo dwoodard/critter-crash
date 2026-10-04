@@ -1,4 +1,4 @@
-const CACHE = 'critter-crash-dev-v13'
+const CACHE = 'critter-crash-dev-v14'
 const ASSETS = ['./index.html','./src/game.js','./icon.svg','./manifest.webmanifest']
 
 self.addEventListener('install', event => {
