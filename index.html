@@ -1,64 +1,36 @@
-<!doctype html><html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#101827"><meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="manifest" href="./manifest.webmanifest"><title>Critter Crash Lab</title>
-<style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101827}body{position:fixed;inset:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);touch-action:none}canvas{display:block;width:100%;height:100%;object-fit:contain;background:#101827;touch-action:none}</style>
-</head><body><canvas id="game" width="900" height="560"></canvas>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.20.0/matter.min.js"></script>
-<script>
-(()=>{"use strict";
-const c=document.getElementById("game"),x=c.getContext("2d"),{Engine,Bodies,Body,Composite,Events}=Matter;
-const W=900,H=560,FLOOR=505,A={x:150,y:390},MAX=120;
-let engine,shot=null,target,support,beam,aim={...A},drag=false,state="aim",impact=0,settled=false,won=false,fx=[],shake=0,last=performance.now(),shotAt=0;
-
-function point(e){const r=c.getBoundingClientRect(),s=Math.min(r.width/W,r.height/H),ox=(r.width-W*s)/2,oy=(r.height-H*s)/2;return{x:(e.clientX-r.left-ox)/s,y:(e.clientY-r.top-oy)/s}}
-function rr(a,b,w,h,r,fill,stroke){x.beginPath();x.roundRect(a,b,w,h,r);if(fill){x.fillStyle=fill;x.fill()}if(stroke){x.strokeStyle=stroke;x.lineWidth=2;x.stroke()}}
-function reset(){
- engine=Engine.create();engine.gravity.y=1;shot=null;aim={...A};drag=false;state="aim";impact=0;settled=false;won=false;fx=[];shake=0;
- const floor=Bodies.rectangle(W/2,FLOOR+30,W+100,60,{isStatic:true,friction:1,label:"floor"});
- support=Bodies.rectangle(680,430,24,150,{label:"support",density:.0012,friction:.65,restitution:.05});
- support.game={w:24,h:150};
- beam=Bodies.rectangle(680,342,190,22,{label:"beam",density:.0012,friction:.65,restitution:.05});
- beam.game={w:190,h:22};
- target=Bodies.circle(735,310,20,{label:"target",density:.0007,friction:.7,restitution:.18});target.alive=true;
- Composite.add(engine.world,[floor,support,beam,target]);
- Events.on(engine,"collisionStart",collide)
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no"><meta name="theme-color" content="#101827"><meta name="apple-mobile-web-app-capable" content="yes"><link rel="manifest" href="./manifest.webmanifest"><title>Critter Crash</title><style>*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101827;touch-action:none}body{position:fixed;inset:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}canvas{display:block;width:100%;height:100%;touch-action:none}</style></head><body><canvas id="c"></canvas><script>
+(()=>{
+const c=document.getElementById('c'),x=c.getContext('2d');
+let w=0,h=0,dpr=1,drag=false,flying=false,hit=false;
+let anchor={x:0,y:0},ball={x:0,y:0,vx:0,vy:0,r:22},target={x:0,y:0,r:42};
+const gravity=900,maxPull=120,launchScale=6.2;
+function resize(){
+ dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);c.style.width=w+'px';c.style.height=h+'px';x.setTransform(dpr,0,0,dpr,0,0);
+ anchor={x:Math.max(85,w*.18),y:h*.68};target={x:w*.78,y:h*.58,r:Math.max(34,Math.min(48,w*.06))};
+ if(!flying&&!drag){ball.x=anchor.x;ball.y=anchor.y}
 }
-function collide(ev){for(const p of ev.pairs){const a=p.bodyA,b=p.bodyB,s=Math.max(a.speed,b.speed);
- if(a.label==="shot"||b.label==="shot"){impact=Math.max(impact,s);if(s>2){shake=Math.max(shake,Math.min(10,s*.7));const q=a.label==="shot"?a:b;for(let i=0;i<14;i++)fx.push({x:q.position.x,y:q.position.y,vx:(Math.random()-.5)*7,vy:(Math.random()-.8)*7,l:35})}}
- if(target.alive&&((a===target&&b.label==="shot")||(b===target&&a.label==="shot"))&&s>.8)kill();
- if(target.alive&&((a===target&&b.label==="beam")||(b===target&&a.label==="beam")||(a===target&&b.label==="support")||(b===target&&a.label==="support"))&&s>.35)kill();
-}}
-function kill(){target.alive=false;won=true;state="won";shake=10;for(let i=0;i<28;i++)fx.push({x:target.position.x,y:target.position.y,vx:(Math.random()-.5)*9,vy:(Math.random()-.8)*9,l:45});setTimeout(()=>Composite.remove(engine.world,target),0);try{navigator.vibrate?.(30)}catch(_){}}
-function fire(){if(!drag||state!=="aim")return;drag=false;const dx=A.x-aim.x,dy=A.y-aim.y,d=Math.hypot(dx,dy);if(d<12){aim={...A};return}
- shot=Bodies.circle(aim.x,aim.y,20,{label:"shot",density:.0065,friction:.4,restitution:.28,frictionAir:.001});
- Composite.add(engine.world,shot);Body.setVelocity(shot,{x:dx*.15,y:dy*.15});Body.setAngularVelocity(shot,dx*.001);state="flying";shotAt=performance.now()
+function reset(){drag=false;flying=false;hit=false;ball.x=anchor.x;ball.y=anchor.y;ball.vx=ball.vy=0}
+function p(e){return{x:e.clientX,y:e.clientY}}
+function down(e){if(flying){reset();return}const q=p(e);if(Math.hypot(q.x-ball.x,q.y-ball.y)<=60){drag=true;c.setPointerCapture?.(e.pointerId);e.preventDefault()}}
+function move(e){if(!drag)return;const q=p(e),dx=q.x-anchor.x,dy=q.y-anchor.y,d=Math.hypot(dx,dy)||1,m=Math.min(maxPull,d);ball.x=anchor.x+dx/d*m;ball.y=anchor.y+dy/d*m;e.preventDefault()}
+function up(e){if(!drag)return;drag=false;const dx=anchor.x-ball.x,dy=anchor.y-ball.y;if(Math.hypot(dx,dy)<8){reset();return}ball.vx=dx*launchScale;ball.vy=dy*launchScale;flying=true;e.preventDefault()}
+c.addEventListener('pointerdown',down,{passive:false});c.addEventListener('pointermove',move,{passive:false});c.addEventListener('pointerup',up,{passive:false});c.addEventListener('pointercancel',up,{passive:false});
+addEventListener('resize',resize);
+let prev=performance.now();
+function update(now){const dt=Math.min(.025,(now-prev)/1000);prev=now;if(flying&&!hit){ball.vy+=gravity*dt;ball.x+=ball.vx*dt;ball.y+=ball.vy*dt;if(Math.hypot(ball.x-target.x,ball.y-target.y)<ball.r+target.r){hit=true;flying=false;try{navigator.vibrate?.(35)}catch(_){}}if(ball.x>w+80||ball.y>h+80||ball.x<-80){flying=false}}}
+function circle(px,py,r,color){x.fillStyle=color;x.beginPath();x.arc(px,py,r,0,Math.PI*2);x.fill()}
+function critter(){circle(ball.x,ball.y,ball.r,'#ef5b45');circle(ball.x-7,ball.y-6,5,'white');circle(ball.x+7,ball.y-6,5,'white');circle(ball.x-6,ball.y-5,2,'#17202b');circle(ball.x+8,ball.y-5,2,'#17202b')}
+function draw(){
+ x.clearRect(0,0,w,h);const sky=x.createLinearGradient(0,0,0,h);sky.addColorStop(0,'#73caff');sky.addColorStop(1,'#daf3ff');x.fillStyle=sky;x.fillRect(0,0,w,h);x.fillStyle='#69ad4c';x.fillRect(0,h*.82,w,h*.18);
+ x.fillStyle='#101827dd';x.fillRect(0,0,w,54);x.fillStyle='white';x.font='900 18px system-ui';x.textBaseline='middle';x.fillText('CRITTER CRASH — CONTROL TEST',16,27);
+ x.strokeStyle='#75451f';x.lineWidth=12;x.lineCap='round';x.beginPath();x.moveTo(anchor.x-16,h*.82);x.lineTo(anchor.x-8,anchor.y-10);x.moveTo(anchor.x+16,h*.82);x.lineTo(anchor.x+8,anchor.y-10);x.stroke();
+ if(drag){x.strokeStyle='#392317';x.lineWidth=5;x.beginPath();x.moveTo(anchor.x-8,anchor.y-10);x.lineTo(ball.x,ball.y);x.lineTo(anchor.x+8,anchor.y-10);x.stroke();
+  const vx=(anchor.x-ball.x)*launchScale,vy=(anchor.y-ball.y)*launchScale;for(let i=1;i<=8;i++){const t=i*.12,px=ball.x+vx*t,py=ball.y+vy*t+.5*gravity*t*t;circle(px,py,3,'#ffffffbb')}}
+ circle(target.x,target.y,target.r,hit?'#63c66d':'#754bd1');x.fillStyle='white';x.textAlign='center';x.font='900 15px system-ui';x.fillText(hit?'HIT!':'HIT ME',target.x,target.y+5);x.textAlign='left';
+ critter();
+ x.fillStyle='#101827';x.textAlign='center';x.font='700 14px system-ui';const text=hit?'GOOD — TAP THE SCREEN TO RESET':flying?'WATCH THE SHOT':'TOUCH THE RED CRITTER • PULL BACK • RELEASE';x.fillText(text,w/2,h-22);x.textAlign='left'
 }
-c.addEventListener("pointerdown",e=>{const p=point(e);if(p.x>780&&p.y<75){reset();return}if(state==="won"||state==="settled"){reset();return}if(state!=="aim")return;if(Math.hypot(p.x-A.x,p.y-A.y)<70){drag=true;c.setPointerCapture(e.pointerId)}});
-c.addEventListener("pointermove",e=>{if(!drag)return;const p=point(e),dx=p.x-A.x,dy=p.y-A.y,d=Math.hypot(dx,dy)||1,m=Math.min(MAX,d);aim={x:A.x+dx/d*m,y:A.y+dy/d*m}});
-c.addEventListener("pointerup",fire);c.addEventListener("pointercancel",fire);
-function update(dt){Engine.update(engine,Math.min(32,dt));fx.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.2;p.l--});fx=fx.filter(p=>p.l>0);shake*=.84;
- if(state==="flying"&&!won&&performance.now()-shotAt>1200){const moving=[shot,support,beam,target].some(b=>b&&b.speed>.2);if(!moving){state="settled";settled=true}}
-}
-function critter(px,py,a=0){x.save();x.translate(px,py);x.rotate(a);x.fillStyle="#f15b45";x.beginPath();x.arc(0,0,20,0,7);x.fill();x.fillStyle="#fff";x.beginPath();x.arc(-6,-5,5,0,7);x.arc(6,-5,5,0,7);x.fill();x.fillStyle="#222";x.beginPath();x.arc(-5,-4,2,0,7);x.arc(7,-4,2,0,7);x.fill();x.restore()}
-function block(b,color){x.save();x.translate(b.position.x,b.position.y);x.rotate(b.angle);x.fillStyle=color;x.fillRect(-b.game.w/2,-b.game.h/2,b.game.w,b.game.h);x.strokeStyle="#71421d";x.lineWidth=3;x.strokeRect(-b.game.w/2,-b.game.h/2,b.game.w,b.game.h);x.restore()}
-function draw(){x.clearRect(0,0,W,H);x.save();if(shake>.2)x.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);
- const sky=x.createLinearGradient(0,0,0,H);sky.addColorStop(0,"#72c9ff");sky.addColorStop(1,"#d9f2ff");x.fillStyle=sky;x.fillRect(-15,-15,W+30,H+30);x.fillStyle="#6fb84f";x.fillRect(0,FLOOR,W,H-FLOOR);x.fillStyle="#4b8d37";x.fillRect(0,FLOOR,W,8);
- rr(14,14,872,62,18,"#101827e8");x.textBaseline="middle";x.fillStyle="#fff";x.textAlign="left";x.font="900 24px system-ui";x.fillText("CRITTER CRASH • PLAY LAB",30,44);rr(785,27,84,36,18,"#f6b73c");x.fillStyle="#251600";x.textAlign="center";x.font="900 13px system-ui";x.fillText("RESET",827,45);
- // debug readout
- const dx=A.x-aim.x,dy=A.y-aim.y,power=Math.round(Math.min(100,Math.hypot(dx,dy)/MAX*100)),angle=Math.round(Math.atan2(-dy,dx)*180/Math.PI);
- rr(18,90,215,104,16,"#101827c9");x.textAlign="left";x.fillStyle="#dbe7f5";x.font="700 14px ui-monospace,monospace";x.fillText("STATE   "+state.toUpperCase(),32,112);x.fillText("POWER   "+power+"%",32,135);x.fillText("ANGLE   "+angle+"°",32,158);x.fillText("IMPACT  "+impact.toFixed(1),32,181);
- // slingshot
- x.strokeStyle="#75451f";x.lineWidth=16;x.lineCap="round";x.beginPath();x.moveTo(125,FLOOR);x.lineTo(142,378);x.moveTo(177,FLOOR);x.lineTo(160,378);x.stroke();
- if(!shot){if(drag){x.strokeStyle="#3a2518";x.lineWidth=7;x.beginPath();x.moveTo(142,378);x.lineTo(aim.x,aim.y);x.lineTo(160,378);x.stroke();const vx=dx*.15,vy=dy*.15;for(let i=1;i<11;i++){const t=i*3.4,px=aim.x+vx*t,py=aim.y+vy*t+.5*.98*t*t;x.fillStyle="#ffffffbb";x.beginPath();x.arc(px,py,4,0,7);x.fill()}}critter(aim.x,aim.y)}else critter(shot.position.x,shot.position.y,shot.angle);
- block(support,"#b97836");block(beam,"#b97836");
- if(target.alive){x.fillStyle="#754bd1";x.beginPath();x.arc(target.position.x,target.position.y,20,0,7);x.fill();x.fillStyle="#fff";x.beginPath();x.arc(target.position.x-6,target.position.y-5,5,0,7);x.arc(target.position.x+6,target.position.y-5,5,0,7);x.fill();x.fillStyle="#222";x.beginPath();x.arc(target.position.x-5,target.position.y-4,2,0,7);x.arc(target.position.x+7,target.position.y-4,2,0,7);x.fill()}
- // weak point marker
- if(state==="aim"){x.strokeStyle="#ffe36e";x.lineWidth=3;x.setLineDash([7,7]);x.beginPath();x.arc(680,445,34,0,7);x.stroke();x.setLineDash([]);x.textAlign="center";x.fillStyle="#6b4b00";x.font="900 13px system-ui";x.fillText("WEAK POINT",680,490)}
- fx.forEach(p=>{x.globalAlpha=Math.min(1,p.l/15);x.fillStyle="#f6b73c";x.fillRect(p.x-3,p.y-3,6,6)});x.globalAlpha=1;
- if(state==="won"||state==="settled"){rr(275,205,350,145,24,"#101827ed","#ffffff44");x.textAlign="center";x.fillStyle=state==="won"?"#ffe36e":"#fff";x.font="900 30px system-ui";x.fillText(state==="won"?"THAT WORKED!":"SHOT COMPLETE",450,250);x.fillStyle="#fff";x.font="700 16px system-ui";x.fillText(state==="won"?"Did the hit feel satisfying?":"Tap anywhere and try another angle.",450,292);x.fillStyle="#f6b73c";x.font="900 15px system-ui";x.fillText("TAP TO RESET",450,325)}
- x.restore()}
-function loop(now){update(now-last);last=now;draw();requestAnimationFrame(loop)}reset();requestAnimationFrame(loop);
-if("serviceWorker"in navigator)addEventListener("load",()=>navigator.serviceWorker.register("./sw.js"));
+function loop(now){update(now);draw();requestAnimationFrame(loop)}resize();reset();requestAnimationFrame(loop);
+if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));
 })();
 </script></body></html>
