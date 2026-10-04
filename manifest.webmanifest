@@ -1,0 +1,18 @@
+{
+  "name": "Critter Crash",
+  "short_name": "Critter Crash",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101827",
+  "theme_color": "#78c7ff",
+  "description": "Launch critters, smash structures, and clear the level.",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
