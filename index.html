@@ -92,7 +92,14 @@ function launch(){
  if(!drag||state!=="playing")return;drag=false;
  const dx=anchor.x-projectile.position.x,dy=anchor.y-projectile.position.y,d=Math.hypot(dx,dy);
  if(d<10){Body.setPosition(projectile,anchor);return}
- shots--;launched=true;shotStart=performance.now();Body.setStatic(projectile,false);Body.setVelocity(projectile,{x:dx*.15,y:dy*.15});show("CRASH 'EM!",700)
+ shots--;launched=true;shotStart=performance.now();
+ const releasePos={x:projectile.position.x,y:projectile.position.y};
+ Body.setStatic(projectile,false);
+ Body.setPosition(projectile,releasePos);
+ Body.setVelocity(projectile,{x:dx*.15,y:dy*.15});
+ Body.setAngularVelocity(projectile,dx*.0008);
+ Body.setAwake(projectile,true);
+ show("CRASH 'EM!",700)
 }
 c.addEventListener("pointerdown",e=>{
  const p=worldPoint(e);
