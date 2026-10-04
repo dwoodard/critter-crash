@@ -3,7 +3,8 @@
 const c=document.getElementById('c'),x=c.getContext('2d');
 let w=0,h=0,dpr=1,drag=false,flying=false,hit=false;
 let anchor={x:0,y:0},ball={x:0,y:0,vx:0,vy:0,r:22},target={x:0,y:0,r:42};
-const gravity=900,maxPull=120,launchScale=6.2;
+const gravity=900,maxPull=120,launchScale=6.2,BUILD='11',SHA='cache-bust';
+let updating=false;
 function resize(){
  dpr=Math.min(devicePixelRatio||1,2);w=innerWidth;h=innerHeight;c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);c.style.width=w+'px';c.style.height=h+'px';x.setTransform(dpr,0,0,dpr,0,0);
  anchor={x:Math.max(85,w*.18),y:h*.68};target={x:w*.78,y:h*.58,r:Math.max(34,Math.min(48,w*.06))};
@@ -11,7 +12,8 @@ function resize(){
 }
 function reset(){drag=false;flying=false;hit=false;ball.x=anchor.x;ball.y=anchor.y;ball.vx=ball.vy=0}
 function p(e){return{x:e.clientX,y:e.clientY}}
-function down(e){if(flying){reset();return}const q=p(e);if(Math.hypot(q.x-ball.x,q.y-ball.y)<=60){drag=true;c.setPointerCapture?.(e.pointerId);e.preventDefault()}}
+async function forceUpdate(){if(updating)return;updating=true;try{if('serviceWorker'in navigator){const regs=await navigator.serviceWorker.getRegistrations();for(const r of regs){try{await r.update()}catch(_){};if(r.waiting)r.waiting.postMessage({type:'SKIP_WAITING'})}}const keys=await caches.keys();await Promise.all(keys.map(k=>caches.delete(k)));const u=new URL(location.href);u.searchParams.set('_build',BUILD+'-'+Date.now());location.replace(u.href)}catch(_){location.reload()}}
+function down(e){const q=p(e);if(q.x>w-118&&q.y<54){forceUpdate();return}if(flying){reset();return}if(Math.hypot(q.x-ball.x,q.y-ball.y)<=60){drag=true;c.setPointerCapture?.(e.pointerId);e.preventDefault()}}
 function move(e){if(!drag)return;const q=p(e),dx=q.x-anchor.x,dy=q.y-anchor.y,d=Math.hypot(dx,dy)||1,m=Math.min(maxPull,d);ball.x=anchor.x+dx/d*m;ball.y=anchor.y+dy/d*m;e.preventDefault()}
 function up(e){if(!drag)return;drag=false;const dx=anchor.x-ball.x,dy=anchor.y-ball.y;if(Math.hypot(dx,dy)<8){reset();return}ball.vx=dx*launchScale;ball.vy=dy*launchScale;flying=true;e.preventDefault()}
 c.addEventListener('pointerdown',down,{passive:false});c.addEventListener('pointermove',move,{passive:false});c.addEventListener('pointerup',up,{passive:false});c.addEventListener('pointercancel',up,{passive:false});
@@ -22,7 +24,7 @@ function circle(px,py,r,color){x.fillStyle=color;x.beginPath();x.arc(px,py,r,0,M
 function critter(){circle(ball.x,ball.y,ball.r,'#ef5b45');circle(ball.x-7,ball.y-6,5,'white');circle(ball.x+7,ball.y-6,5,'white');circle(ball.x-6,ball.y-5,2,'#17202b');circle(ball.x+8,ball.y-5,2,'#17202b')}
 function draw(){
  x.clearRect(0,0,w,h);const sky=x.createLinearGradient(0,0,0,h);sky.addColorStop(0,'#73caff');sky.addColorStop(1,'#daf3ff');x.fillStyle=sky;x.fillRect(0,0,w,h);x.fillStyle='#69ad4c';x.fillRect(0,h*.82,w,h*.18);
- x.fillStyle='#101827dd';x.fillRect(0,0,w,54);x.fillStyle='white';x.font='900 18px system-ui';x.textBaseline='middle';x.fillText('CRITTER CRASH — CONTROL TEST',16,27);x.textAlign='right';x.font='700 11px ui-monospace,monospace';x.fillStyle='#9fb0c6';x.fillText('BUILD 10',w-14,27);x.textAlign='left';
+ x.fillStyle='#101827dd';x.fillRect(0,0,w,54);x.fillStyle='white';x.font='900 18px system-ui';x.textBaseline='middle';x.fillText('CRITTER CRASH — CONTROL TEST',16,27);x.textAlign='right';x.font='700 11px ui-monospace,monospace';x.fillStyle='#9fb0c6';x.fillText('BUILD '+BUILD,w-126,27);x.fillStyle='#f6b73c';x.fillRect(w-112,9,98,36);x.fillStyle='#251600';x.font='900 12px system-ui';x.fillText(updating?'UPDATING…':'↻ UPDATE',w-24,27);x.textAlign='left';
  x.strokeStyle='#75451f';x.lineWidth=12;x.lineCap='round';x.beginPath();x.moveTo(anchor.x-16,h*.82);x.lineTo(anchor.x-8,anchor.y-10);x.moveTo(anchor.x+16,h*.82);x.lineTo(anchor.x+8,anchor.y-10);x.stroke();
  if(drag){x.strokeStyle='#392317';x.lineWidth=5;x.beginPath();x.moveTo(anchor.x-8,anchor.y-10);x.lineTo(ball.x,ball.y);x.lineTo(anchor.x+8,anchor.y-10);x.stroke();
   const vx=(anchor.x-ball.x)*launchScale,vy=(anchor.y-ball.y)*launchScale;for(let i=1;i<=8;i++){const t=i*.12,px=ball.x+vx*t,py=ball.y+vy*t+.5*gravity*t*t;circle(px,py,3,'#ffffffbb')}}
